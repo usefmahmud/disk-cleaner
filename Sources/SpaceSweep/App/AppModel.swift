@@ -53,7 +53,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var hasFullDiskAccess = true
 
     // Navigation and selection
-    @Published var selection: CleanupCategory? = .overview
+    @Published var selection: CleanupCategory? = .overview {
+        didSet {
+            #if DEBUG
+            if oldValue != selection {
+                print("debug: selection \(oldValue?.rawValue ?? "nil") -> \(selection?.rawValue ?? "nil")")
+                print(Thread.callStackSymbols.prefix(14).joined(separator: "\n"))
+            }
+            #endif
+        }
+    }
     @Published var selectedIDs: Set<String> = []
     @Published var searchText: String = ""
     @Published var sortOrder: ItemSort = .largest
@@ -87,6 +96,10 @@ final class AppModel: ObservableObject {
     private var scanGeneration = 0
     private var toastTask: Task<Void, Never>?
 
+    #if DEBUG
+    private var didApplyDebugScanOptions = false
+    #endif
+
     init(settingsStore: SettingsStore = SettingsStore(), presetStore: PresetStore = PresetStore()) {
         self.settingsStore = settingsStore
         self.presetStore = presetStore
@@ -96,7 +109,18 @@ final class AppModel: ObservableObject {
         self.quickCleanRules = presetStore.load()
         self.quickCleanSelectedIDs = Set(presetStore.load().map(\.id))
         self.hasFullDiskAccess = PermissionChecker.hasFullDiskAccess()
+
+        #if DEBUG
+        print("debug: AppModel init \(ObjectIdentifier(self))")
+        applyDebugNavigationOptions()
+        #endif
     }
+
+    #if DEBUG
+    deinit {
+        print("debug: AppModel deinit \(ObjectIdentifier(self))")
+    }
+    #endif
 
     // MARK: - Derived data
 
@@ -282,6 +306,10 @@ final class AppModel: ObservableObject {
             } else {
                 showToast("Found \(SizeFormatter.string(totalReclaimable)) you can reclaim.", symbol: "sparkles")
             }
+
+            #if DEBUG
+            applyDebugScanOptions()
+            #endif
         }
     }
 
@@ -517,4 +545,40 @@ final class AppModel: ObservableObject {
     func presentError(_ message: String) {
         errorMessage = message
     }
+
+    #if DEBUG
+    // Launch options used only for capturing screens during development.
+    private func applyDebugNavigationOptions() {
+        let arguments = CommandLine.arguments
+        guard let flag = arguments.firstIndex(of: "--screen"),
+              arguments.indices.contains(flag + 1),
+              let category = CleanupCategory(rawValue: arguments[flag + 1]) else {
+            return
+        }
+        selection = category
+        print("debug screen: \(category.rawValue), arguments: \(arguments)")
+    }
+
+    private func applyDebugScanOptions() {
+        guard !didApplyDebugScanOptions, !allItems.isEmpty else { return }
+        didApplyDebugScanOptions = true
+        let arguments = CommandLine.arguments
+
+        if arguments.contains("--seed-quick-clean") {
+            for item in allItems.prefix(4) {
+                let rule = QuickCleanRule(item: item)
+                quickCleanRules.append(rule)
+                quickCleanSelectedIDs.insert(rule.id)
+            }
+            selection = .quickClean
+        }
+
+        if arguments.contains("--show-cleanup") {
+            let items = Array(allItems.prefix(4))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                self.beginCleanup(items: items)
+            }
+        }
+    }
+    #endif
 }

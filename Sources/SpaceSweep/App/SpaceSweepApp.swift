@@ -82,6 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            print("debug: windows at snapshot:")
+            for (index, candidate) in NSApp.windows.enumerated() {
+                print("  [\(index)] number=\(candidate.windowNumber) visible=\(candidate.isVisible) title=\(candidate.title) frame=\(candidate.frame)")
+            }
             guard let window = NSApp.windows.first(where: { $0.isVisible }),
                   let view = window.contentView else {
                 fputs("snapshot: no visible window\n", stderr)
